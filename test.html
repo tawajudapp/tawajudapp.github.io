@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>اختبار تواجد</title>
+<style>body{font-family:system-ui,Arial;margin:0;padding:14px;background:#f1f5f4;color:#0f172a}h2{margin:0 0 6px}button{display:block;width:100%;padding:14px;margin:8px 0;border:0;border-radius:12px;background:#0f766e;color:#fff;font-size:17px;font-weight:700}pre{background:#fff;border-radius:10px;padding:10px;white-space:pre-wrap;word-break:break-word;font-size:13px;direction:ltr;text-align:left}video{width:100%;max-height:260px;background:#000;border-radius:10px}.ok{color:#15803d}.bad{color:#b91c1c}.s{color:#475569;font-size:14px}canvas{display:none}</style></head><body>
+<h2>اختبار الكاميرا والحساسات</h2>
+<div class="s">اضغط الأزرار بالترتيب. في الآخر اضغط "ملخص" وصوّر الشاشة وابعتها.</div>
+<pre id="env"></pre>
+<button id="b1">1) اختبار الكاميرا الأمامية</button>
+<video id="v" autoplay playsinline muted style="display:none"></video>
+<button id="b2">2) اختبار حساسات الحركة (امسك الموبايل 4 ثواني)</button>
+<button id="b3">3) اختبار الـ GPS (3 قراءات)</button>
+<button id="b4">4) اختبار التخزين والمفتاح المشفر</button>
+<button id="b5">ملخص</button>
+<pre id="out"></pre>
+<canvas id="c"></canvas>
+<script>
+var R={};var $=function(s){return document.querySelector(s)};
+function show(){var t=Object.keys(R).map(function(k){return k+': '+R[k]}).join('\n');$('#out').textContent=t}
+function set(k,v){R[k]=v;show()}
+var inIframe=(function(){try{return window.self!==window.top}catch(e){return true}})();
+$('#env').textContent='iframe: '+inIframe+'\nurl: '+location.origin+'\nsecure: '+window.isSecureContext+'\nUA: '+navigator.userAgent+'\nscreen: '+screen.width+'x'+screen.height+' cores: '+navigator.hardwareConcurrency;
+R.iframe=String(inIframe);R.origin=location.origin;
+$('#b1').onclick=function(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){set('camera','FAIL: no mediaDevices API');return}
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false}).then(function(s){
+    var v=$('#v');v.style.display='block';v.srcObject=s;var t=s.getVideoTracks()[0],st=t.getSettings();
+    set('camera','OK label="'+t.label+'" '+st.width+'x'+st.height+' fps='+st.frameRate+' facing='+st.facingMode+' devId='+(st.deviceId?'yes':'no'));
+    setTimeout(function(){try{var c=$('#c');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);var d=c.toDataURL('image/jpeg',0.7);set('frameCapture','OK '+Math.round(d.length*0.75/1024)+' KB')}catch(e){set('frameCapture','FAIL '+e)}s.getTracks().forEach(function(x){x.stop()});},1500);
+  },function(e){set('camera','FAIL '+e.name+': '+e.message)});
+};
+$('#b2').onclick=function(){
+  function run(){
+    var n=0,ax=[],ay=[],az=[],gx=[],t0=Date.now();
+    function h(e){n++;var a=e.accelerationIncludingGravity||{};ax.push(a.x||0);ay.push(a.y||0);az.push(a.z||0);var r=e.rotationRate||{};gx.push(r.alpha||0)}
+    window.addEventListener('devicemotion',h);
+    setTimeout(function(){window.removeEventListener('devicemotion',h);
+      function sd(a){if(!a.length)return 0;var m=a.reduce(function(p,c){return p+c},0)/a.length;return Math.sqrt(a.reduce(function(p,c){return p+(c-m)*(c-m)},0)/a.length)}
+      set('motion',n?('OK events='+n+' accSD='+sd(ax).toFixed(3)+','+sd(ay).toFixed(3)+','+sd(az).toFixed(3)+' gyroSD='+sd(gx).toFixed(3)):'FAIL: no devicemotion events in 4s');
+    },4000);
+  }
+  if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){
+    DeviceMotionEvent.requestPermission().then(function(r){if(r==='granted'){set('motionPermission','granted');run()}else set('motionPermission',r)},function(e){set('motionPermission','FAIL '+e)});
+  }else{set('motionPermission','not needed');run()}
+};
+$('#b3').onclick=function(){
+  if(!navigator.geolocation){set('gps','FAIL: no geolocation');return}
+  var arr=[],t0=Date.now(),id=navigator.geolocation.watchPosition(function(p){var c=p.coords;arr.push({t:Date.now()-t0,lat:c.latitude.toFixed(6),lng:c.longitude.toFixed(6),acc:c.accuracy,alt:c.altitude,spd:c.speed,hd:c.heading});},function(e){set('gps','FAIL '+e.code+' '+e.message)},{enableHighAccuracy:true,maximumAge:0,timeout:10000});
+  setTimeout(function(){navigator.geolocation.clearWatch(id);set('gps',arr.length?('readings='+arr.length+' '+JSON.stringify(arr.slice(0,4))):'FAIL: none in 6s (or permission denied)')},6000);
+};
+$('#b4').onclick=function(){
+  var res=[];res.push('localStorage:'+(function(){try{localStorage.setItem('x','1');return 'OK'}catch(e){return 'FAIL'}})());
+  if(!window.indexedDB||!window.crypto||!crypto.subtle){set('storage','FAIL no indexedDB/crypto.subtle '+res);return}
+  crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']).then(function(kp){
+    return new Promise(function(ok,no){var q=indexedDB.open('tw-test',1);q.onupgradeneeded=function(){q.result.createObjectStore('k')};q.onerror=function(){no(q.error)};q.onsuccess=function(){var tx=q.result.transaction('k','readwrite');tx.objectStore('k').put(kp.privateKey,'p');tx.oncomplete=function(){ok(kp)};tx.onerror=function(){no(tx.error)}}});
+  }).then(function(kp){
+    return new Promise(function(ok,no){var q=indexedDB.open('tw-test',1);q.onsuccess=function(){var g=q.result.transaction('k').objectStore('k').get('p');g.onsuccess=function(){ok([kp,g.result])};g.onerror=function(){no(g.error)}}});
+  }).then(function(a){
+    var kp=a[0],pk=a[1];return crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},pk,new TextEncoder().encode('nonce')).then(function(sig){return crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},kp.publicKey,sig,new TextEncoder().encode('nonce'))}).then(function(v){
+      return crypto.subtle.exportKey('jwk',pk).then(function(){res.push('extractable:YES(bad)')},function(){res.push('private key non-exportable:OK')}).then(function(){set('storage','OK '+res.join(' ')+' signVerify='+v)});
+    });
+  }).catch(function(e){set('storage','FAIL '+(e&&e.name)+': '+(e&&e.message)+' '+res)});
+  try{var g=document.createElement('canvas').getContext('webgl');var x=g&&g.getExtension('WEBGL_debug_renderer_info');set('webgl',x?g.getParameter(x.UNMASKED_RENDERER_WEBGL):'hidden')}catch(e){set('webgl','n/a')}
+};
+$('#b5').onclick=function(){show();window.scrollTo(0,document.body.scrollHeight)};
+</script></body></html>
