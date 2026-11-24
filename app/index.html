@@ -56,6 +56,7 @@ input:focus,select:focus,textarea:focus{outline:0;border-color:var(--p2)}
 .sheet{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:24px 24px 0 0;padding:18px 16px 28px;animation:up .2s}
 @keyframes up{from{transform:translateY(40px);opacity:0}}
 .sheet h3{margin-top:0;font-size:18px}
+.camv{position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column;color:#fff}.camtop{padding:14px;display:flex;gap:10px;align-items:center}.camx{background:#ffffff33;color:#fff;border:0;border-radius:50%;width:36px;height:36px;font-size:16px}.cmt{font-weight:800;font-size:18px;flex:1}.camvid{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}.camvid video{max-width:100%;max-height:100%}.camfoot{padding:16px;text-align:center}.cmc{font-size:56px;font-weight:900;min-height:70px}.cms{font-size:14px;opacity:.85;margin-bottom:8px}
 .toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:11px 18px;border-radius:14px;z-index:99;max-width:90%;text-align:center;font-weight:600}
 .big{border:0;width:100%;padding:22px;border-radius:24px;font-size:22px;font-weight:800;color:#fff;cursor:pointer;box-shadow:0 8px 20px rgba(15,118,110,.3)}
 .big.in{background:linear-gradient(135deg,var(--p),var(--p2))}.big.out{background:linear-gradient(135deg,#b91c1c,#ef4444)}.big:disabled{opacity:.55}
@@ -82,7 +83,7 @@ input:focus,select:focus,textarea:focus{outline:0;border-color:var(--p2)}
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var S = { user: null, token: localStorage.getItem('tk') || '', dev: localStorage.getItem('dev') || '', tab: 'home', stack: [], data: {}, boot: null };
 if (!S.dev) { S.dev = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2)); localStorage.setItem('dev', S.dev); }
-var FLAGS = { low_acc: 'دقة الموقع ضعيفة', travel: 'تنقل غير منطقي بين موقعين', out_far: 'انصراف خارج نطاق الفرع', missed_challenge: 'تجاهل تحدي الصورة', fake_photo: 'صورة تحدٍّ مرفوضة', manual: 'تسجيل يدوي' };
+var FLAGS = { pending_live: 'التحقق الحي لم يكتمل (معلق)', pending_live_out: 'انصراف بدون تحقق حي', cap_exceeded: 'تجاوز حد المعلق الشهري', back_camera: 'صورة بالكاميرا الخلفية', virtual_cam: 'كاميرا افتراضية مشتبه بها', odd_camera: 'مواصفات كاميرا غريبة', not_front: 'ليست الكاميرا الأمامية', static_frames: 'الصورتان متطابقتان تقريباً', fast_frames: 'التقاط سريع جداً', static_gps: 'GPS ثابت بشكل مريب', no_motion: 'لا توجد حركة بالجهاز', out_approval: 'انصراف خارج النطاق بانتظار موافقتك', out_approved: 'انصراف خارج النطاق تمت الموافقة عليه', speed: 'سرعة غير منطقية', low_acc: 'دقة الموقع ضعيفة', travel: 'تنقل غير منطقي بين موقعين', out_far: 'انصراف خارج نطاق الفرع', missed_challenge: 'تجاهل تحدي الصورة', fake_photo: 'صورة تحدٍّ مرفوضة', manual: 'تسجيل يدوي' };
 var ST = { in: ['حاضر الآن', 'ok'], out: ['انصرف', 'p'], absent: ['لم يحضر', 'bad'], leave: ['إجازة', 'w'] };
 var LV = { pending: ['قيد المراجعة', 'w'], approved: ['تمت الموافقة', 'ok'], rejected: ['مرفوضة', 'bad'] };
 var TS = { new: ['جديدة', 'w'], doing: ['قيد التنفيذ', 'p'], done: ['منتهية', 'ok'] };
@@ -123,7 +124,7 @@ function setPhoto(id, done) {
 }
 var hydT = 0;
 new MutationObserver(function () { clearTimeout(hydT); hydT = setTimeout(function () { hydrateImgs(); }, 50); }).observe(document.documentElement, { childList: true, subtree: true });
-function excuseBtn(c) { return c.status === 'missed' ? '<button class="btn sm o" data-ex="' + c.id + '">📝 إعفاء بعذر</button>' : ''; }
+function excuseBtn(c) { return (c.status === 'missed' || c.status === 'failed') ? '<button class="btn sm o" data-ex="' + c.id + '">📝 إعفاء بعذر</button>' : ''; }
 function excuseNote(c) { return c.status === 'excused' ? '<div class="s" style="font-size:12px;color:var(--mut);margin-top:4px">عذر: ' + esc(c.excuseNote) + ' · ' + esc(c.excusedBy) + '</div>' : ''; }
 function bindExcuse(root, done) {
   root.querySelectorAll('[data-ex]').forEach(function (b) {
@@ -268,7 +269,7 @@ function repHome(v) {
     var open = d.open, b = $('#body'); if (!b) return;
     var brs = d.branches;
     var h = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><div><b>' + fD(todayStr()) + '</b><div class="s" style="color:var(--mut);font-size:13px">' + (S.user.type === 'mobile' ? 'منسق/مروج متنقل' : 'منسق/مروج ثابت') + ' · ' + esc(brs.map(function (x) { return x.name; }).join('، ') || 'لا يوجد فرع') + '</div></div>' + (open ? tag('حاضر', 'ok') : (d.onLeave ? tag('إجازة', 'w') : tag('لم تسجل بعد'))) + '</div>';
-    if (d.challenge) h += '<div class="alert" id="chal" style="margin-top:12px">📸 مطلوب منك صورة تحقق الآن! اضغط للبدء <div class="s" id="chcd"></div></div>';
+    if (d.challenge) h += '<div class="alert" id="chal" style="margin-top:12px">📸 مطلوب منك تحقق بالكاميرا الآن! اضغط للبدء <div class="s" id="chcd"></div></div>';
     if (open) h += '<div class="kv"><span>وقت الحضور</span><b>' + fT(open.inAt) + '</b></div><div class="kv"><span>الفرع</span><b style="direction:rtl">' + esc(open.branch) + '</b></div>';
     h += '<div class="gps" id="gps">📡 جاري تحديد موقعك…</div>';
     h += '<button class="big ' + (open ? 'out' : 'in') + '" id="act">' + (open ? 'تسجيل انصراف' : 'تسجيل حضور') + '</button></div>';
@@ -279,7 +280,7 @@ function repHome(v) {
     if (d.today.length) h += '<h3>تسجيلات اليوم</h3><div class="card">' + d.today.map(function (a) { return '<div class="kv"><span>' + esc(a.branch) + '</span><b>' + fT(a.inAt) + ' ← ' + (a.outAt ? fT(a.outAt) : '…') + '</b></div>'; }).join('') + '</div>';
     b.innerHTML = h;
     $('#t1').onclick = function () { S.tab = 'tasks'; render(); }; $('#t2').onclick = function () { push(repFieldPhoto); }; $('#t3').onclick = function () { S.tab = 'leaves'; render(); }; $('#t4').onclick = function () { push(repHistory); };
-    if (d.challenge) { $('#chal').onclick = function () { challengeScreen(d.challenge); }; tickCd(); }
+    if (d.challenge) { $('#chal').onclick = function () { if (d.challenge.kind === 'in' || d.challenge.kind === 'out') liveFlow(d.challenge); else challengeScreen(d.challenge); }; tickCd(); }
     $('#act').onclick = function () { doAct(); };
     paintGps();
   }
@@ -299,15 +300,156 @@ function repHome(v) {
   function load() { return api('repHome').then(function (d) { S.data.rep = d; paint(); }, fail); }
   function doAct() {
     var d = S.data.rep, b = $('#act'); b.disabled = true; b.textContent = 'جاري تحديد الموقع بدقة…';
-    bestPos(12000, 20).then(function (p) {
-      if (d.open) return api('outStart', p).then(function (r) { if (r.challenge) challengeScreen(r.challenge); else { toast('تم تسجيل الانصراف'); load(); } });
-      return api('checkIn', p).then(function () { toast('تم تسجيل الحضور ✅'); load(); });
-    }).catch(function (e) { fail(e); }).then(function () { var bb = $('#act'); if (bb) { bb.disabled = false; var o = S.data.rep && S.data.rep.open; bb.textContent = o ? 'تسجيل انصراف' : 'تسجيل حضور'; } });
+    var mo = motionStart();
+    gatherFix(4000, 20).then(function (p) {
+      var m = mo.stop(), body = { lat: p.lat, lng: p.lng, acc: p.acc, fixes: p.fixes, motion: m, fp: fpInfo() };
+      if (d.open) return api('outStart', body).then(function (r) { if (r.challenge) liveFlow(r.challenge); else { toast('تم تسجيل الانصراف'); load(); } });
+      return api('checkIn', body).then(function (r) { if (r.challenge) liveFlow(r.challenge); else { toast('تم تسجيل الحضور ✅'); load(); } });
+    }).catch(function (e) { mo.stop(); fail(e); }).then(function () { var bb = $('#act'); if (bb) { bb.disabled = false; var o = S.data.rep && S.data.rep.open; bb.textContent = o ? 'تسجيل انصراف' : 'تسجيل حضور'; } });
   }
   load();
   if (navigator.geolocation) S.gpsW = navigator.geolocation.watchPosition(function (p) { pos = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }; paintGps(); }, function (e) { var g = $('#gps'); if (g) { g.className = 'gps bad'; g.textContent = e.code === 1 ? '⚠️ فعّل إذن الموقع للمتصفح (Allow location)' : '⚠️ تعذر تحديد الموقع. تأكد من تشغيل الـ GPS'; } }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
   pollT = setInterval(load, 20000);
   S.cdT = setInterval(tickCd, 1000);
+}
+
+/* ---------- الكاميرا الحية والتحقق ---------- */
+function camOpen(facing) {
+  return new Promise(function (res, rej) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return rej({ name: 'NoAPI', msg: 'المتصفح لا يدعم الكاميرا المباشرة' });
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 960 }, height: { ideal: 960 } }, audio: false }).then(function (s) {
+      var v = document.createElement('video'); v.setAttribute('playsinline', ''); v.setAttribute('autoplay', ''); v.muted = true; v.srcObject = s;
+      var t = s.getVideoTracks()[0], st = (t && t.getSettings) ? t.getSettings() : {}, t0 = Date.now();
+      var stop = function () { s.getTracks().forEach(function (x) { x.stop(); }); };
+      var p = v.play(); if (p && p.catch) p.catch(function () {});
+      var iv = setInterval(function () {
+        if (v.videoWidth > 0 && v.readyState >= 2) { clearInterval(iv); st = (t && t.getSettings) ? t.getSettings() : st; res({ s: s, v: v, stop: stop, info: { label: (t && t.label) || '', w: st.width || v.videoWidth, h: st.height || v.videoHeight, fps: st.frameRate || '', facing: st.facingMode || '' } }); }
+        else if (Date.now() - t0 > 9000) { clearInterval(iv); stop(); rej({ name: 'NoVideo', msg: 'الكاميرا لم تبدأ' }); }
+      }, 100);
+    }, function (e) { rej({ name: (e && e.name) || 'CamError', msg: (e && e.message) || '' }); });
+  });
+}
+function camSnap(cam) {
+  var v = cam.v, k = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement('canvas');
+  c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.7);
+}
+function camTiny(cam) {
+  var c = document.createElement('canvas'); c.width = 24; c.height = 24;
+  var x = c.getContext('2d'); x.drawImage(cam.v, 0, 0, 24, 24);
+  var d = x.getImageData(0, 0, 24, 24).data, g = [];
+  for (var i = 0; i < d.length; i += 4) g.push(d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11);
+  return g;
+}
+function tinyDiff(a, b) { var s = 0; for (var i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return a.length ? s / a.length : 0; }
+function camScreen(title) {
+  var w = document.createElement('div'); w.className = 'camv';
+  w.innerHTML = '<div class="camtop"><button class="camx" id="cmx">✕</button><div class="cmt" id="cmt">' + (title || '') + '</div></div><div class="camvid" id="cmv"></div><div class="camfoot"><div class="cmc" id="cmc"></div><div class="cms" id="cms"></div><button class="btn g b" id="cmb" style="display:none"></button></div>';
+  document.body.appendChild(w); return w;
+}
+function liveFlow(c) {
+  var w = camScreen('جاري فتح الكاميرا…'), cam = null, closed = false;
+  var $w = function (s) { return w.querySelector(s); };
+  function end(msg) { closed = true; if (cam) cam.stop(); w.remove(); if (msg) toast(msg); render(); }
+  $w('#cmx').onclick = function () { end(); };
+  $w('#cms').textContent = 'ثبّت الموبايل أمام وشك. هتطلب منك حركتين ورا بعض، وبتتصور تلقائي.';
+  camOpen('user').then(function (cm) {
+    if (closed) { cm.stop(); return; }
+    cam = cm; cm.v.style.transform = 'scaleX(-1)'; $w('#cmv').appendChild(cm.v);
+    $w('#cmt').textContent = 'جهّز نفسك…'; var frames = [], t0 = Date.now();
+    function step(i) {
+      if (closed) return;
+      $w('#cmt').textContent = (i + 1) + '/2 · ' + (i === 0 ? c.gesture : c.gesture2); var n = 3; $w('#cmc').textContent = n;
+      var iv = setInterval(function () {
+        if (closed) return clearInterval(iv);
+        n--; if (n > 0) { $w('#cmc').textContent = n; return; }
+        clearInterval(iv); $w('#cmc').textContent = '📸';
+        frames.push({ d: camSnap(cm), g: camTiny(cm), t: Date.now() - t0 });
+        if (i === 0) setTimeout(function () { step(1); }, 700); else send();
+      }, 1000);
+    }
+    function send() {
+      $w('#cmt').textContent = 'جاري الإرسال…'; $w('#cmc').textContent = '';
+      api('submitLive', { id: c.id, data1: frames[0].d, data2: frames[1].d, cam: cm.info, dv: Math.round(tinyDiff(frames[0].g, frames[1].g) * 100) / 100, t1: frames[0].t, t2: frames[1].t }).then(function (r) {
+        end(r.pending ? 'اتسجل «معلق» ويراجعه المشرف' : (r.kind === 'out' ? 'تم تسجيل الانصراف ✅' : 'تم تسجيل الحضور ✅'));
+      }, function (e) { end((e && e.msg) || 'تعذر الإرسال'); });
+    }
+    setTimeout(function () { step(0); }, 1500);
+  }, function (e) {
+    if (closed) return;
+    api('liveFail', { id: c.id, reason: (e && e.name) || 'camera' }).then(function (r) {
+      if (r.needBack) { w.remove(); backFlow(r.challenge || c); }
+      else end('الكاميرا لم تعمل. اتسجل «معلق» ويراجعه المشرف');
+    }, function (er) { end((er && er.msg) || 'تعذر الاتصال'); });
+  });
+}
+function backFlow(c) {
+  var w = camScreen('وصلت للحد الشهري لحالات «معلق». صوّر لافتة الفرع أو الرف بالكاميرا الخلفية'), cam = null, closed = false;
+  var $w = function (s) { return w.querySelector(s); };
+  function end(msg) { closed = true; if (cam) cam.stop(); w.remove(); if (msg) toast(msg); render(); }
+  $w('#cmx').onclick = function () { end(); };
+  camOpen('environment').then(function (cm) {
+    if (closed) { cm.stop(); return; }
+    cam = cm; $w('#cmv').appendChild(cm.v);
+    var b = $w('#cmb'); b.style.display = 'block'; b.textContent = '📸 التقاط';
+    b.onclick = function () {
+      b.disabled = true; b.textContent = 'جاري الإرسال…';
+      api('liveBack', { id: c.id, data: camSnap(cm), cam: cm.info }).then(function (r) { end(r.kind === 'out' ? 'تم تسجيل الانصراف ✅' : 'تم تسجيل الحضور ✅'); }, function (e) { end((e && e.msg) || 'تعذر الإرسال'); });
+    };
+  }, function (e) {
+    if (closed) return;
+    api('liveFail', { id: c.id, back: true, reason: (e && e.name) || 'camera' }).then(function () { end('اتسجل «معلق» ويراجعه المشرف'); }, function (er) { end((er && er.msg) || 'تعذر الاتصال'); });
+  });
+}
+function snapPhoto(facing, title) {
+  return new Promise(function (res, rej) {
+    var w = camScreen(title || 'صوّر الآن'), cam = null, closed = false;
+    var $w = function (s) { return w.querySelector(s); };
+    function end() { closed = true; if (cam) cam.stop(); w.remove(); }
+    $w('#cmx').onclick = function () { end(); rej({ msg: 'تم الإلغاء' }); };
+    camOpen(facing).then(function (cm) {
+      if (closed) { cm.stop(); return; }
+      cam = cm; if (facing === 'user') cm.v.style.transform = 'scaleX(-1)'; $w('#cmv').appendChild(cm.v);
+      var b = $w('#cmb'); b.style.display = 'block'; b.textContent = '📸 التقاط';
+      b.onclick = function () { var d = camSnap(cm); end(); res(d); };
+    }, function (e) { end(); rej({ msg: 'الكاميرا المباشرة مطلوبة. اسمح للمتصفح باستخدام الكاميرا ثم حاول تاني' }); });
+  });
+}
+function gatherFix(ms, goodAcc) {
+  return new Promise(function (res, rej) {
+    if (!navigator.geolocation) return rej({ msg: 'المتصفح لا يدعم تحديد الموقع' });
+    var fx = [], best = null, t0 = Date.now(), done = false, wid, soft, hard;
+    function fin() {
+      if (done) return; done = true; navigator.geolocation.clearWatch(wid); clearTimeout(soft); clearTimeout(hard);
+      best ? res({ lat: best.lat, lng: best.lng, acc: best.acc, fixes: fx.slice(0, 6) }) : rej({ msg: 'تعذر تحديد موقعك. فعّل الموقع (GPS) وامنح الإذن' });
+    }
+    wid = navigator.geolocation.watchPosition(function (p) {
+      var c = p.coords; fx.push({ lat: c.latitude, lng: c.longitude, acc: c.accuracy, alt: c.altitude, spd: c.speed, hd: c.heading });
+      if (!best || c.accuracy < best.acc) best = { lat: c.latitude, lng: c.longitude, acc: c.accuracy };
+      if (Date.now() - t0 >= ms) fin();
+    }, function (e) { if (!best && !done) { done = true; clearTimeout(soft); clearTimeout(hard); navigator.geolocation.clearWatch(wid); rej({ msg: e.code === 1 ? 'تم رفض إذن الموقع. فعّل الموقع للمتصفح من الإعدادات' : 'تعذر تحديد موقعك. تأكد من تشغيل GPS' }); } else fin(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+    soft = setTimeout(function () { if (best) fin(); }, ms);
+    hard = setTimeout(fin, 15000);
+  });
+}
+function motionStart() {
+  var o = { n: 0, a: [[], [], []] };
+  function h(e) { var a = e.accelerationIncludingGravity || {}; o.n++; o.a[0].push(a.x || 0); o.a[1].push(a.y || 0); o.a[2].push(a.z || 0); }
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') DeviceMotionEvent.requestPermission().then(function (r) { if (r === 'granted') window.addEventListener('devicemotion', h); }, function () {});
+    else if (window.DeviceMotionEvent) window.addEventListener('devicemotion', h);
+  } catch (e) {}
+  o.stop = function () {
+    window.removeEventListener('devicemotion', h);
+    var sd = 0; o.a.forEach(function (v) { if (!v.length) return; var m = v.reduce(function (p, c) { return p + c; }, 0) / v.length, s = Math.sqrt(v.reduce(function (p, c) { return p + (c - m) * (c - m); }, 0) / v.length); if (s > sd) sd = s; });
+    return { n: o.n, sd: Math.round(sd * 10000) / 10000 };
+  };
+  return o;
+}
+function fpInfo() {
+  var gl = ''; try { var g = document.createElement('canvas').getContext('webgl'), x = g && g.getExtension('WEBGL_debug_renderer_info'); gl = x ? g.getParameter(x.UNMASKED_RENDERER_WEBGL) : ''; } catch (e) {}
+  return { sw: Math.max(screen.width, screen.height), sh: Math.min(screen.width, screen.height), cores: navigator.hardwareConcurrency || '', gl: gl };
 }
 
 function challengeScreen(c) {
@@ -339,7 +481,7 @@ function repFieldPhoto(v) {
       $('#b').innerHTML = h; hydrateImgs($('#b'));
       if ($('#rq')) $('#rq').onclick = function () { api('photoPermReq').then(function (r) { S.user.photoPerm = r.photoPerm; toast('تم إرسال الطلب'); load(); }, fail); };
       if ($('#sn')) $('#sn').onclick = function () {
-        var b = this; busy(b, function () { return pickImage('environment', true).then(function (d) { return bestPos(5000, 50).catch(function () { return {}; }).then(function (p) { return api('uploadPhoto', { data: d, note: $('#nt').value, lat: p.lat || '', lng: p.lng || '', branchId: (S.data.rep && S.data.rep.branches[0]) ? S.data.rep.branches[0].id : '' }); }); }).then(function () { toast('تم رفع الصورة ✅'); load(); }); });
+        var b = this; busy(b, function () { return snapPhoto('environment', 'صوّر الفرع الآن').then(function (d) { return bestPos(5000, 50).catch(function () { return {}; }).then(function (p) { return api('uploadPhoto', { data: d, note: $('#nt').value, lat: p.lat || '', lng: p.lng || '', branchId: (S.data.rep && S.data.rep.branches[0]) ? S.data.rep.branches[0].id : '' }); }); }).then(function () { toast('تم رفع الصورة ✅'); load(); }); });
       };
     }, fail);
   }
@@ -357,7 +499,7 @@ function repTasks(v) {
         if (a === 'doing') return api('taskUpdate', { id: id, status: 'doing' }).then(function () { render(); }, fail);
         var o = ov('<h3>إنجاز المهمة</h3><label>ملاحظة (اختياري)</label><textarea id="nt" rows="3"></textarea><br><button class="btn b" id="ph">📷 إرفاق صورة وإنهاء</button><br><br><button class="btn g b" id="ok">إنهاء بدون صورة</button>');
         $('#ok', o).onclick = function () { busy(this, function () { return api('taskUpdate', { id: id, status: 'done', note: $('#nt', o).value }).then(function () { o.close(); render(); }); }); };
-        $('#ph', o).onclick = function () { var bb = this; busy(bb, function () { return pickImage('environment', false).then(function (d) { return api('taskUpdate', { id: id, status: 'done', note: $('#nt', o).value, data: d }); }).then(function () { o.close(); render(); }); }); };
+        $('#ph', o).onclick = function () { var bb = this; busy(bb, function () { return snapPhoto('environment', 'صوّر المهمة الآن').then(function (d) { return api('taskUpdate', { id: id, status: 'done', note: $('#nt', o).value, data: d }); }).then(function () { o.close(); render(); }); }); };
       };
     });
   }, fail);
@@ -408,6 +550,7 @@ function supHome(v) {
     if (p.leaves) ch.push(['chip', '🗓️ ' + p.leaves + ' إجازة تنتظرك', 'leaves']);
     if (p.devices) ch.push(['chip', '📱 ' + p.devices + ' طلب جهاز', 'devs']);
     if (p.review) ch.push(['chip r', '📸 ' + p.review + ' صورة تحقق للمراجعة', 'fraud']);
+    if (p.outs) ch.push(['chip r', '🚪 ' + p.outs + ' انصراف خارج النطاق بانتظار موافقتك', 'fraud']);
     if (p.photoReq) ch.push(['chip', '📷 ' + p.photoReq + ' طلب إذن تصوير', 'reps']);
     if (p.docs) ch.push(['chip', '📄 ' + p.docs + ' مستند للمراجعة', 'reps']);
     if (p.flags) ch.push(['chip r', '⚠️ ' + p.flags + ' حالة مشتبه بها اليوم', 'fraud']);
@@ -458,18 +601,20 @@ function attDetail(uid, date) {
     if (!r.items.length) h += '<div class="empty">لا يوجد تسجيل حضور في هذا اليوم</div><button class="btn o b" id="man">تسجيل حضور يدوي</button>';
     r.items.forEach(function (a) {
       var inr = +a.inDist <= (+a.bRadius || +r.radius);
-      h += '<div class="card" style="background:var(--bg);margin-top:12px;box-shadow:none"><b>🏬 ' + esc(a.branch || 'بدون فرع') + '</b> ' + (a.status === 'late' ? tag('متأخر', 'w') : '') + (a.edited === '1' ? tag('معدّل', 'p') : '') +
+      h += '<div class="card" style="background:var(--bg);margin-top:12px;box-shadow:none"><b>🏬 ' + esc(a.branch || 'بدون فرع') + '</b> ' + (a.status === 'late' ? tag('متأخر', 'w') : '') + (a.live === 'pending' ? tag('معلق', 'bad') : a.live === 'ok' ? tag('تحقق حي ✅', 'ok') : a.live === 'back' ? tag('كاميرا خلفية', 'w') : '') + (a.edited === '1' ? tag('معدّل', 'p') : '') +
         (a.inLat ? '<div class="gps ' + (inr ? 'ok' : 'bad') + '">' + (inr ? '✅ داخل النطاق الجغرافي: ' : '❌ خارج النطاق: ') + a.inDist + ' م من الفرع (المسموح ' + (a.bRadius || r.radius) + ' م)</div>' : '') +
         '<div class="kv"><span>الحضور (توقيت الخادم)</span><b>' + fT(a.inAt) + '</b></div>' + (a.inLat ? '<div class="kv"><span>موقع الحضور</span><b>' + (+a.inLat).toFixed(6) + ', ' + (+a.inLng).toFixed(6) + '</b></div><div class="kv"><span>دقة الـ GPS</span><b>±' + a.inAcc + ' م</b></div>' : '') +
         '<div class="kv"><span>الانصراف</span><b>' + (a.outAt ? fT(a.outAt) : 'لم ينصرف') + '</b></div>' + (a.outLat ? '<div class="kv"><span>مسافة الانصراف</span><b>' + a.outDist + ' م</b></div>' : '') +
         (a.flags.length ? '<div class="info">⚠️ ' + a.flags.map(function (f) { return FLAGS[f] || f; }).join(' · ') + '</div>' : '') + (a.note ? '<div class="s" style="font-size:12px">' + esc(a.note) + '</div>' : '') +
-        '<div style="display:flex;gap:8px;margin-top:8px">' + (a.inLat ? '<a class="btn sm g" target="_blank" href="' + mapLink(a.inLat, a.inLng) + '">🗺️ Google Maps</a>' : '') + '<button class="btn sm o" data-e="' + a.id + '">✏️ تعديل</button></div></div>';
+        (a.outState === 'approval' ? '<div class="alert">🚪 انصراف خارج النطاق بانتظار موافقتك<br><button class="btn sm g" data-od="1:' + a.id + '">موافقة</button> <button class="btn sm r" data-od="0:' + a.id + '">رفض</button></div>' : '') + '<div style="display:flex;gap:8px;margin-top:8px">' + (a.inLat ? '<a class="btn sm g" target="_blank" href="' + mapLink(a.inLat, a.inLng) + '">🗺️ Google Maps</a>' : '') + '<button class="btn sm o" data-e="' + a.id + '">✏️ تعديل</button></div></div>';
     });
-    if (r.challenges.length) h += '<h3>📸 تحديات الصور</h3>' + r.challenges.map(function (c) { var st = { pending: ['جارٍ', 'w'], submitted: ['تم الإرسال', 'p'], missed: ['فاتَه', 'bad'], excused: ['معذور', 'ok'], replaced: ['ملغى', ''] }[c.status] || [c.status, '']; return '<div class="li" style="cursor:default"><div class="m"><div class="t">' + esc(c.gesture) + '</div><div class="s">' + fT(c.createdAt) + ' · ' + (c.kind === 'out' ? 'عند الانصراف' : 'عشوائي') + '</div>' + excuseNote(c) + '</div>' + tag(st[0], st[1]) + (c.hasPhoto ? '<button class="btn sm o" data-ph="' + c.id + '">عرض</button>' : '') + excuseBtn(c) + '</div>'; }).join('');
-    h += '<br><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm o" id="sc">📸 أرسل تحدي صورة الآن</button><button class="btn sm o" id="tk">✅ كلّفه بمهمة</button><button class="btn sm l" id="cl">إغلاق</button></div>';
+    if (r.challenges.length) h += '<h3>📸 تحديات الصور</h3>' + r.challenges.map(function (c) { var st = { pending: ['جارٍ', 'w'], submitted: ['تم الإرسال', 'p'], missed: ['فاتَه', 'bad'], excused: ['معذور', 'ok'], replaced: ['ملغى', ''], failed: ['لم تكتمل', 'bad'], back: ['كاميرا خلفية', 'w'] }[c.status] || [c.status, '']; return '<div class="li" style="cursor:default"><div class="m"><div class="t">' + esc(c.gesture) + '</div><div class="s">' + fT(c.createdAt) + ' · ' + (c.kind === 'out' ? 'عند الانصراف' : c.kind === 'in' ? 'عند الحضور' : 'يدوي') + (c.gesture2 ? ' + ' + esc(c.gesture2) : '') + '</div>' + excuseNote(c) + '</div>' + tag(st[0], st[1]) + (c.hasPhoto ? '<button class="btn sm o" data-ph="' + c.id + '">عرض</button>' : '') + (c.hasPhoto2 ? '<button class="btn sm o" data-ph="' + c.id + ':2">2</button>' : '') + (c.hasBack ? '<button class="btn sm o" data-ph="' + c.id + ':b">خلفية</button>' : '') + excuseBtn(c) + '</div>'; }).join('');
+    h += '<br><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm o" id="sc">📸 أرسل تحدي صورة الآن</button><button class="btn sm o" id="pg">➕ استثناء «معلق» إضافي</button><button class="btn sm o" id="tk">✅ كلّفه بمهمة</button><button class="btn sm l" id="cl">إغلاق</button></div>';
     var sh = $('.sheet', o); sh.innerHTML = h;
     $('#cl', o).onclick = o.close;
     $('#sc', o).onclick = function () { api('challengeSend', { userId: uid }).then(function () { toast('تم إرسال التحدي للمنسق/المروج'); }, fail); };
+    $('#pg', o).onclick = function () { var n = prompt('سبب الاستثناء الإضافي (يُسجل في سجل المراجعة):'); if (n && n.trim()) api('pendGrant', { userId: uid, note: n.trim() }).then(function (x) { toast('تم. المسموح الآن ' + x.allowed + ' والمستخدم ' + x.used); }, fail); };
+    sh.querySelectorAll('[data-od]').forEach(function (b) { b.onclick = function () { var q = b.getAttribute('data-od').split(':'); api('outDecide', { id: q[1], ok: q[0] === '1' }).then(function () { o.close(); toast('تم'); render(); }, fail); }; });
     $('#tk', o).onclick = function () { o.close(); taskForm([uid]); };
     if ($('#man', o)) $('#man', o).onclick = function () { o.close(); manualAtt(uid, date); };
     sh.querySelectorAll('[data-ph]').forEach(function (b) { b.onclick = function () { viewImg(b.getAttribute('data-ph')); }; });
@@ -606,7 +751,7 @@ PAGES.fraud = function (v) {
   api('fraud', {}).then(function (r) {
     var h = '<div class="info">من بداية الشهر حتى اليوم. التحديات: صورة عشوائية بحركة خلال دقيقتين. راجع الصور وحدّد المقبول والمرفوض.</div>';
     if (r.stats.length) h += '<h3>منسقين ومروجين تحتاج متابعة</h3><div class="card">' + r.stats.map(function (s) { return '<div class="kv"><span>' + esc(s.name) + '</span><b style="direction:rtl">فاتَه ' + s.missed + ' · مرفوض ' + s.bad + ' من ' + s.total + '</b></div>'; }).join('') + '</div>';
-    h += '<h3>تحديات الصور</h3>' + (r.challenges.length ? r.challenges.map(function (c) { var st = { pending: ['جارٍ', 'w'], submitted: ['بانتظار مراجعتك', 'p'], missed: ['فاتَه', 'bad'], excused: ['معذور', 'ok'], replaced: ['ملغى', ''] }[c.status] || [c.status, '']; return '<div class="card"><div style="display:flex;justify-content:space-between"><b>' + esc(c.userName) + '</b><span>' + tag(st[0], st[1]) + (c.review ? tag(c.review === 'ok' ? 'مقبولة' : 'مرفوضة', c.review === 'ok' ? 'ok' : 'bad') : '') + '</span></div><div class="s" style="font-size:13px;margin:4px 0">الحركة: ' + esc(c.gesture) + '</div><div class="s" style="font-size:12px;color:var(--mut)">' + fDT(c.createdAt) + '</div>' + excuseNote(c) + (c.status === 'missed' ? '<div style="margin-top:8px">' + excuseBtn(c) + '</div>' : '') + (c.hasPhoto ? '<div style="margin-top:8px">' + img(c.id) + '</div>' + (!c.review ? '<br><button class="btn sm g" data-ok="' + c.id + '">الحركة صحيحة</button> <button class="btn sm r" data-no="' + c.id + '">مشتبه/مرفوضة</button>' : '') : '') + '</div>'; }).join('') : '<div class="empty">لا توجد تحديات</div>');
+    h += '<h3>تحديات الصور</h3>' + (r.challenges.length ? r.challenges.map(function (c) { var st = { pending: ['جارٍ', 'w'], submitted: ['بانتظار مراجعتك', 'p'], missed: ['فاتَه', 'bad'], excused: ['معذور', 'ok'], replaced: ['ملغى', ''], failed: ['لم تكتمل', 'bad'], back: ['كاميرا خلفية', 'w'] }[c.status] || [c.status, '']; return '<div class="card"><div style="display:flex;justify-content:space-between"><b>' + esc(c.userName) + '</b><span>' + tag(st[0], st[1]) + (c.review ? tag(c.review === 'ok' ? 'مقبولة' : 'مرفوضة', c.review === 'ok' ? 'ok' : 'bad') : '') + '</span></div><div class="s" style="font-size:13px;margin:4px 0">الحركة: ' + esc(c.gesture) + '</div><div class="s" style="font-size:12px;color:var(--mut)">' + fDT(c.createdAt) + '</div>' + excuseNote(c) + ((c.status === 'missed' || c.status === 'failed') ? '<div style="margin-top:8px">' + excuseBtn(c) + '</div>' : '') + (c.failReason ? '<div class="s" style="font-size:12px">السبب: ' + esc(c.failReason) + '</div>' : '') + (c.hasPhoto ? '<div style="margin-top:8px">' + img(c.id) + (c.hasPhoto2 ? img(c.id + ':2') : '') + '</div>' : '') + (c.hasBack ? '<div style="margin-top:8px">' + img(c.id + ':b') + '</div>' : '') + (c.hasPhoto ? '' + (!c.review ? '<br><button class="btn sm g" data-ok="' + c.id + '">الحركة صحيحة</button> <button class="btn sm r" data-no="' + c.id + '">مشتبه/مرفوضة</button>' : '') : '') + '</div>'; }).join('') : '<div class="empty">لا توجد تحديات</div>');
     h += '<h3>حالات حضور بعلامات تنبيه</h3>' + (r.flagged.length ? '<div class="card">' + r.flagged.map(function (a) { return '<div class="li" data-r="' + a.userId + '" data-d="' + a.date + '"><div class="m"><div class="t">' + esc(a.userName) + ' · ' + fD(a.date) + '</div><div class="s">⚠️ ' + a.flags.map(function (f) { return FLAGS[f] || f; }).join(' · ') + '</div></div>›</div>'; }).join('') + '</div>' : '<div class="empty">لا توجد حالات</div>');
     $('#b').innerHTML = h; hydrateImgs($('#b'));
     $('#b').querySelectorAll('[data-ok],[data-no]').forEach(function (b) { b.onclick = function () { var ok = b.hasAttribute('data-ok'); api('challengeReview', { id: b.getAttribute(ok ? 'data-ok' : 'data-no'), ok: ok }).then(function () { render(); }, fail); }; });
