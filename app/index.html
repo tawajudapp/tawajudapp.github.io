@@ -82,8 +82,9 @@ input:focus,select:focus,textarea:focus{outline:0;border-color:var(--p2)}
 <script>
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var S = { user: null, token: localStorage.getItem('tk') || '', dev: localStorage.getItem('dev') || '', tab: 'home', stack: [], data: {}, boot: null };
-if (!S.dev) { S.dev = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2)); localStorage.setItem('dev', S.dev); }
-var FLAGS = { pending_live: 'التحقق الحي لم يكتمل (معلق)', pending_live_out: 'انصراف بدون تحقق حي', cap_exceeded: 'تجاوز حد المعلق الشهري', back_camera: 'صورة بالكاميرا الخلفية', virtual_cam: 'كاميرا افتراضية مشتبه بها', odd_camera: 'مواصفات كاميرا غريبة', not_front: 'ليست الكاميرا الأمامية', static_frames: 'الصورتان متطابقتان تقريباً', fast_frames: 'التقاط سريع جداً', static_gps: 'GPS ثابت بشكل مريب', no_motion: 'لا توجد حركة بالجهاز', out_approval: 'انصراف خارج النطاق بانتظار موافقتك', out_approved: 'انصراف خارج النطاق تمت الموافقة عليه', speed: 'سرعة غير منطقية', low_acc: 'دقة الموقع ضعيفة', travel: 'تنقل غير منطقي بين موقعين', out_far: 'انصراف خارج نطاق الفرع', missed_challenge: 'تجاهل تحدي الصورة', fake_photo: 'صورة تحدٍّ مرفوضة', manual: 'تسجيل يدوي' };
+S.legacy = S.dev; if (localStorage.getItem('kdev')) S.dev = localStorage.getItem('kdev');
+if (!S.dev) { S.dev = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2)); localStorage.setItem('dev', S.dev); S.legacy = S.dev; }
+var FLAGS = { hw_changed: 'مواصفات الجهاز اختلفت عن آخر حضور', pending_live: 'التحقق الحي لم يكتمل (معلق)', pending_live_out: 'انصراف بدون تحقق حي', cap_exceeded: 'تجاوز حد المعلق الشهري', back_camera: 'صورة بالكاميرا الخلفية', virtual_cam: 'كاميرا افتراضية مشتبه بها', odd_camera: 'مواصفات كاميرا غريبة', not_front: 'ليست الكاميرا الأمامية', static_frames: 'الصورتان متطابقتان تقريباً', fast_frames: 'التقاط سريع جداً', static_gps: 'GPS ثابت بشكل مريب', no_motion: 'لا توجد حركة بالجهاز', out_approval: 'انصراف خارج النطاق بانتظار موافقتك', out_approved: 'انصراف خارج النطاق تمت الموافقة عليه', speed: 'سرعة غير منطقية', low_acc: 'دقة الموقع ضعيفة', travel: 'تنقل غير منطقي بين موقعين', out_far: 'انصراف خارج نطاق الفرع', missed_challenge: 'تجاهل تحدي الصورة', fake_photo: 'صورة تحدٍّ مرفوضة', manual: 'تسجيل يدوي' };
 var ST = { in: ['حاضر الآن', 'ok'], out: ['انصرف', 'p'], absent: ['لم يحضر', 'bad'], leave: ['إجازة', 'w'] };
 var LV = { pending: ['قيد المراجعة', 'w'], approved: ['تمت الموافقة', 'ok'], rejected: ['مرفوضة', 'bad'] };
 var TS = { new: ['جديدة', 'w'], doing: ['قيد التنفيذ', 'p'], done: ['منتهية', 'ok'] };
@@ -139,6 +140,33 @@ function bindExcuse(root, done) {
 function ini(n) { return esc((n || '?').trim().charAt(0)); }
 function tag(m, k) { return '<span class="tag ' + (k || '') + '">' + m + '</span>'; }
 function mapLink(la, lo) { return 'https://www.google.com/maps?q=' + la + ',' + lo; }
+/* ---------- مفتاح الجهاز (Web Crypto) ---------- */
+function kvOpen() { return new Promise(function (res, rej) { var q = indexedDB.open('tawajud', 1); q.onupgradeneeded = function () { q.result.createObjectStore('k'); }; q.onsuccess = function () { res(q.result); }; q.onerror = function () { rej(q.error); }; }); }
+function kvGet(k) { return kvOpen().then(function (db) { return new Promise(function (res, rej) { var r = db.transaction('k').objectStore('k').get(k); r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); }); }
+function kvSet(k, v) { return kvOpen().then(function (db) { return new Promise(function (res, rej) { var t = db.transaction('k', 'readwrite'); t.objectStore('k').put(v, k); t.oncomplete = function () { res(); }; t.onerror = function () { rej(t.error); }; }); }); }
+function hx(buf) { return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+var _key = null;
+function getKey() {
+  if (_key) return _key;
+  _key = Promise.resolve().then(function () {
+    if (!window.crypto || !crypto.subtle || !window.indexedDB) throw new Error('nokey');
+    return kvGet('ec').then(function (o) {
+      if (o && o.priv && o.x) return o;
+      return crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']).then(function (kp) {
+        return crypto.subtle.exportKey('raw', kp.publicKey).then(function (raw) {
+          var h = hx(raw), n = { priv: kp.privateKey, x: h.slice(2, 66), y: h.slice(66, 130) };
+          return kvSet('ec', n).then(function () { return n; });
+        });
+      });
+    }).then(function (o) { return crypto.subtle.digest('SHA-256', new TextEncoder().encode(o.x + o.y)).then(function (d) { o.thumb = 'k:' + hx(d).slice(0, 32); return o; }); });
+  });
+  _key.catch(function () { _key = null; });
+  return _key;
+}
+function signNonce(k, nonce) { return crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, k.priv, new TextEncoder().encode(nonce)).then(hx); }
+function loginProof() {
+  return getKey().then(function (k) { return api('nonce').then(function (n) { return signNonce(k, n.nonce).then(function (sig) { return { pub: { x: k.x, y: k.y }, sig: sig, nonce: n.nonce }; }); }); }).catch(function (e) { if (e && e.code) throw e; return {}; });
+}
 function devInfo() { var u = navigator.userAgent, m = /\(([^)]+)\)/.exec(u); return (m ? m[1] : u).slice(0, 100); }
 function mins(ms) { var s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
 function spin() { return '<div class="spin">جاري التحميل…</div>'; }
@@ -223,14 +251,14 @@ function showLogin(msg) {
     '<label>الكود</label><input id="c" dir="ltr" autocapitalize="none" autocomplete="username"><label>الرمز السري</label><input id="p" type="password" inputmode="numeric" dir="ltr" autocomplete="current-password"><br><button class="btn b" id="go">دخول</button></div>';
   $('#go').onclick = function () {
     var b = this, code = $('#c').value, pin = $('#p').value;
-    busy(b, function () { return api('login', { code: code, pin: pin, deviceId: S.dev, deviceInfo: devInfo() }).then(function (r) { S.token = r.token; S.user = r.user; localStorage.setItem('tk', r.token); enter(); }, function (e) { if (e.code === 'DEVICE') showDevice(code, pin); else throw e; }); });
+    busy(b, function () { return loginProof().then(function (pr) { return api('login', { code: code, pin: pin, deviceId: S.legacy, deviceInfo: devInfo(), pub: pr.pub, sig: pr.sig, nonce: pr.nonce }); }).then(function (r) { if (r.dev) { S.dev = r.dev; localStorage.setItem('kdev', r.dev); } S.token = r.token; S.user = r.user; localStorage.setItem('tk', r.token); enter(); }, function (e) { if (e.code === 'DEVICE') showDevice(code, pin); else throw e; }); });
   };
 }
 function showDevice(code, pin) {
   $('#app').innerHTML = '<div class="login"><div class="logo">📱</div><h2 style="text-align:center">حسابك مرتبط بجهاز آخر</h2><p style="text-align:center;color:var(--mut)">لحماية الحضور، كل حساب يشتغل من جهاز واحد فقط. لو غيّرت التليفون، ابعت طلب للمشرف ليفك الربط.</p>' +
     '<label>الكود</label><input id="c" dir="ltr" value="' + esc(code || '') + '" autocapitalize="none"><label>الرمز السري</label><input id="p" type="password" inputmode="numeric" dir="ltr" value="' + esc(pin || '') + '"><label>سبب الطلب</label><input id="r" value="استبدال الهاتف"><br><button class="btn b" id="go">إرسال طلب فك الربط</button><br><br><button class="btn l b" id="bk">رجوع</button></div>';
   $('#bk').onclick = function () { showLogin(); };
-  $('#go').onclick = function () { var b = this; busy(b, function () { return api('devreq', { code: $('#c').value, pin: $('#p').value, deviceId: S.dev, deviceInfo: devInfo(), reason: $('#r').value }).then(function () { showLogin('تم إرسال الطلب للمشرف. بعد الموافقة سجّل الدخول من جهازك الجديد.'); }); }); };
+  $('#go').onclick = function () { var b = this; busy(b, function () { return getKey().then(function (k) { return k.thumb; }, function () { return S.legacy; }).then(function (dv) { return api('devreq', { code: $('#c').value, pin: $('#p').value, deviceId: dv, deviceInfo: devInfo(), reason: $('#r').value }).then(function () { showLogin('تم إرسال الطلب للمشرف. بعد الموافقة سجّل الدخول من جهازك الجديد.'); }); }); }); };
 }
 
 /* ---------- الإطار ---------- */
